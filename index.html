@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Finance Tracker</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 10px;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .header h1 { font-size: 1.8em; margin-bottom: 5px; }
+        .header p { opacity: 0.9; }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            padding: 20px;
+            background: #f8fafc;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .stat-card h3 { font-size: 0.9em; color: #666; margin-bottom: 5px; }
+        .stat-card .amount { font-size: 1.4em; font-weight: bold; }
+        
+        .balance { color: #38a169; }
+        .debt { color: #e53e3e; }
+        .savings { color: #3182ce; }
+        .expense { color: #d69e2e; }
+        
+        .content { padding: 20px; }
+        
+        .tabs {
+            display: flex;
+            background: #f1f5f9;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        
+        .tab {
+            flex: 1;
+            padding: 12px 8px;
+            text-align: center;
+            cursor: pointer;
+            font-size: 0.9em;
+            background: transparent;
+            border: none;
+            transition: all 0.3s;
+        }
+        
+        .tab.active { background: white; color: #4facfe; font-weight: 600; }
+        
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 600; color: #2d3748; }
+        
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #4facfe;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+        }
+        
+        .btn:active { transform: translateY(1px); }
+        
+        .list { margin-top: 20px; }
+        .list-item {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .list-item-info h4 { margin-bottom: 5px; }
+        .list-item-info p { color: #666; font-size: 0.9em; }
+        
+        .delete-btn {
+            background: #e53e3e;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 5px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: #e2e8f0;
+            border-radius: 3px;
+            margin: 8px 0;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4facfe, #00f2fe);
+            transition: width 0.3s ease;
+        }
+        
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        
+        .three-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+        }
+        
+        @media (max-width: 480px) {
+            .two-col, .three-col { grid-template-columns: 1fr; }
+            .stats { grid-template-columns: 1fr; }
+            .tabs { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💰 My Finance Tracker</h1>
+            <p>Take control of your money</p>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <h3>💳 Total Balance</h3>
+                <div class="amount balance" id="totalBalance">฿0</div>
+            </div>
+            <div class="stat-card">
+                <h3>🔴 Total Debt</h3>
+                <div class="amount debt" id="totalDebt">฿0</div>
+            </div>
+            <div class="stat-card">
+                <h3>🎯 Savings</h3>
+                <div class="amount savings" id="totalSavings">฿0</div>
+            </div>
+            <div class="stat-card">
+                <h3>📊 This Month</h3>
+                <div class="amount expense" id="monthlyExpense">฿0</div>
+            </div>
+        </div>
+        
+        <div class="content">
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('transactions')">💸 Money</button>
+                <button class="tab" onclick="showTab('debts')">🔴 Debts</button>
+                <button class="tab" onclick="showTab('goals')">🎯 Goals</button>
+                <button class="tab" onclick="showTab('accounts')">🏦 Accounts</button>
+            </div>
+            
+            <!-- Transactions -->
+            <div id="transactions" class="tab-content active">
+                <h2>Add Transaction</h2>
+                <form id="transactionForm">
+                    <div class="two-col">
+                        <div class="form-group">
+                            <label>Type</label>
+                            <select id="transactionType">
+                                <option value="expense">💸 Expense</option>
+                                <option value="income">💰 Income</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Amount (฿)</label>
+                            <input type="number" id="transactionAmount" required min="0" step="0.01">
+                        </div>
+                    </div>
+                    <div class="two-col">
+                        <div class="form-group">
+                            <label>Category</label>
+                            <select id="transactionCategory">
+                                <option value="food">🍜 Food</option>
+                                <option value="transport">🚗 Transport</option>
+                                <option value="shopping">🛍️ Shopping</option>
+                                <option value="bills">💡 Bills</option>
+                                <option value="healthcare">🏥 Healthcare</option>
+                                <option value="entertainment">🎬 Entertainment</option>
+                                <option value="salary">💼 Salary</option>
+                                <option value="other">📝 Other</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Date</label>
+                            <input type="date" id="transactionDate" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <input type="text" id="transactionDescription" placeholder="e.g., Lunch at Terminal 21">
+                    </div>
+                    <button type="submit" class="btn">Add Transaction</button>
+                </form>
+                
+                <div class="list" id="transactionsList"></div>
+            </div>
+            
+            <!-- Debts -->
+            <div id="debts" class="tab-content">
+                <h2>Add Debt</h2>
+                <form id="debtForm">
+                    <div class="form-group">
+                        <label>Debt Name</label>
+                        <input type="text" id="debtName" placeholder="e.g., Credit Card - Bangkok Bank" required>
+                    </div>
+                    <div class="two-col">
+                        <div class="form-group">
+                            <label>Total Amount (฿)</label>
+                            <input type="number" id="debtTotal" required min="0" step="0.01">
+                        </div>
+                        <div class="form-group">
+                            <label>Current Balance (฿)</label>
+                            <input type="number" id="debtCurrent" required min="0" step="0.01">
+                        </div>
+                    </div>
+                    <div class="two-col">
+                        <div class="form-group">
+                            <label>Interest Rate (%)</label>
+                            <input type="number" id="debtRate" required min="0" step="0.01">
+                        </div>
+                        <div class="form-group">
+                            <label>Min Payment (฿)</label>
+                            <input type="number" id="debtMinPayment" required min="0" step="0.01">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn">Add Debt</button>
+                </form>
+                
+                <div class="list" id="debtsList"></div>
+            </div>
+            
+            <!-- Goals -->
+            <div id="goals" class="tab-content">
+                <h2>Add Savings Goal</h2>
+                <form id="goalForm">
+                    <div class="form-group">
+                        <label>Goal Name</label>
+                        <input type="text" id="goalName" placeholder="e.g., Emergency Fund" required>
+                    </div>
+                    <div class="two-col">
+                        <div class="form-group">
+                            <label>Target Amount (฿)</label>
+                            <input type="number" id="goalTarget" required min="0" step="0.01">
+                        </div>
+                        <div class="form-group">
+                            <label>Current Amount (฿)</label>
+                            <input type="number" id="goalCurrent" required min="0" step="0.01">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Target Date</label>
+                        <input type="date" id="goalDate" required>
+                    </div>
+                    <button type="submit" class="btn">Add Goal</button>
+                </form>
+                
+                <div class="list" id="goalsList"></div>
+            </div>
+            
+            <!-- Accounts -->
+            <div id="accounts" class="tab-content">
+                <h2>Add Bank Account</h2>
+                <form id="accountForm">
+                    <div class="two-col">
+                        <div class="form-group">
+                            <label>Bank</label>
+                            <select id="accountBank">
+                                <option value="bangkok-bank">Bangkok Bank</option>
+                                <option value="kasikorn">Kasikorn Bank</option>
+                                <option value="scb">SCB</option>
+                                <option value="krungthai">Krungthai Bank</option>
+                                <option value="tmb">TMB Bank</option>
+                                <option value="krungsri">Krungsri</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Type</label>
+                            <select id="accountType">
+                                <option value="savings">Savings</option>
+                                <option value="checking">Checking</option>
+                                <option value="credit">Credit Card</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="two-col">
+                        <div class="form-group">
+                            <label>Account Name</label>
+                            <input type="text" id="accountName" placeholder="e.g., Main Savings" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Balance (฿)</label>
+                            <input type="number" id="accountBalance" required step="0.01">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn">Add Account</button>
+                </form>
+                
+                <div class="list" id="accountsList"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize data
+        let appData = {
+            transactions: [],
+            debts: [],
+            goals: [],
+            accounts: []
+        };
+
+        // Storage functions
+        function saveToStorage() {
+            try {
+                localStorage.setItem('myFinanceData', JSON.stringify(appData));
+            } catch (e) {
+                console.log('Storage not available');
+            }
+        }
+
+        function loadFromStorage() {
+            try {
+                const saved = localStorage.getItem('myFinanceData');
+                if (saved) {
+                    appData = JSON.parse(saved);
+                }
+            } catch (e) {
+                console.log('Could not load saved data');
+            }
+        }
+
+        // Tab switching
+        function showTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // Update dashboard
+        function updateDashboard() {
+            const totalBalance = appData.accounts
+                .filter(acc => acc.type !== 'credit')
+                .reduce((sum, acc) => sum + Number(acc.balance || 0), 0);
+            
+            const totalDebt = appData.debts
+                .reduce((sum, debt) => sum + Number(debt.current || 0), 0);
+            
+            const totalSavings = appData.goals
+                .reduce((sum, goal) => sum + Number(goal.current || 0), 0);
+            
+            const now = new Date();
+            const thisMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+            const monthlyExpense = appData.transactions
+                .filter(t => t.type === 'expense' && t.date && t.date.startsWith(thisMonth))
+                .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+            
+            document.getElementById('totalBalance').textContent = `฿${totalBalance.toLocaleString()}`;
+            document.getElementById('totalDebt').textContent = `฿${totalDebt.toLocaleString()}`;
+            document.getElementById('totalSavings').textContent = `฿${totalSavings.toLocaleString()}`;
+            document.getElementById('monthlyExpense').textContent = `฿${monthlyExpense.toLocaleString()}`;
+        }
+
+        // Render functions
+        function renderTransactions() {
+            const container = document.getElementById('transactionsList');
+            container.innerHTML = '';
+            
+            if (appData.transactions.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No transactions yet</p>';
+                return;
+            }
+            
+            const sorted = [...appData.transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
+            
+            sorted.slice(0, 10).forEach((transaction, index) => {
+                const item = document.createElement('div');
+                item.className = 'list-item';
+                item.innerHTML = `
+                    <div class="list-item-info">
+                        <h4>${transaction.description || 'No description'}</h4>
+                        <p>${transaction.category} • ${transaction.date}</p>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-weight: bold; color: ${transaction.type === 'income' ? '#38a169' : '#e53e3e'};">
+                            ${transaction.type === 'income' ? '+' : '-'}฿${Number(transaction.amount || 0).toLocaleString()}
+                        </div>
+                        <button class="delete-btn" onclick="deleteTransaction(${appData.transactions.indexOf(transaction)})">Delete</button>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function renderDebts() {
+            const container = document.getElementById('debtsList');
+            container.innerHTML = '';
+            
+            if (appData.debts.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No debts tracked</p>';
+                return;
+            }
+            
+            appData.debts.forEach((debt, index) => {
+                const progress = Math.max(0, Math.min(100, ((debt.total - debt.current) / debt.total) * 100));
+                const item = document.createElement('div');
+                item.className = 'list-item';
+                item.innerHTML = `
+                    <div style="flex: 1;">
+                        <div style="display: flex; justify-content: space-between; align-items: start;">
+                            <div class="list-item-info">
+                                <h4>${debt.name}</h4>
+                                <p>Rate: ${debt.rate}% • Min: ฿${Number(debt.minPayment || 0).toLocaleString()}</p>
+                            </div>
+                            <button class="delete-btn" onclick="deleteDebt(${index})">Delete</button>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${progress}%"></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.9em; color: #666;">
+                            <span>Paid: ฿${Number(debt.total - debt.current || 0).toLocaleString()}</span>
+                            <span>Remaining: ฿${Number(debt.current || 0).toLocaleString()}</span>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function renderGoals() {
+            const container = document.getElementById('goalsList');
+            container.innerHTML = '';
+            
+            if (appData.goals.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No goals set</p>';
+                return;
+            }
+            
+            appData.goals.forEach((goal, index) => {
+                const progress = Math.max(0, Math.min(100, (goal.current / goal.target) * 100));
+                const item = document.createElement('div');
+                item.className = 'list-item';
+                item.innerHTML = `
+                    <div style="flex: 1;">
+                        <div style="display: flex; justify-content: space-between; align-items: start;">
+                            <div class="list-item-info">
+                                <h4>${goal.name}</h4>
+                                <p>Target: ${goal.date}</p>
+                            </div>
+                            <button class="delete-btn" onclick="deleteGoal(${index})">Delete</button>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${progress}%"></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.9em; color: #666;">
+                            <span>${progress.toFixed(1)}%</span>
+                            <span>฿${Number(goal.current || 0).toLocaleString()} / ฿${Number(goal.target || 0).toLocaleString()}</span>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function renderAccounts() {
+            const container = document.getElementById('accountsList');
+            container.innerHTML = '';
+            
+            if (appData.accounts.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No accounts added</p>';
+                return;
+            }
+            
+            appData.accounts.forEach((account, index) => {
+                const item = document.createElement('div');
+                item.className = 'list-item';
+                item.innerHTML = `
+                    <div class="list-item-info">
+                        <h4>${account.name}</h4>
+                        <p>${account.bank} • ${account.type}</p>
+                        <div style="font-weight: bold; font-size: 1.1em; margin-top: 5px;">
+                            ฿${Number(account.balance || 0).toLocaleString()}
+                        </div>
+                    </div>
+                    <button class="delete-btn" onclick="deleteAccount(${index})">Delete</button>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function renderAll() {
+            renderTransactions();
+            renderDebts();
+            renderGoals();
+            renderAccounts();
+            updateDashboard();
+        }
+
+        // Delete functions
+        function deleteTransaction(index) {
+            appData.transactions.splice(index, 1);
+            saveToStorage();
+            renderAll();
+        }
+
+        function deleteDebt(index) {
+            appData.debts.splice(index, 1);
+            saveToStorage();
+            renderAll();
+        }
+
+        function deleteGoal(index) {
+            appData.goals.splice(index, 1);
+            saveToStorage();
+            renderAll();
+        }
+
+        function deleteAccount(index) {
+            appData.accounts.splice(index, 1);
+            saveToStorage();
+            renderAll();
+        }
+
+        // Form handlers
+        document.getElementById('transactionForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const transaction = {
+                type: document.getElementById('transactionType').value,
+                amount: parseFloat(document.getElementById('transactionAmount').value) || 0,
+                category: document.getElementById('transactionCategory').value,
+                date: document.getElementById('transactionDate').value,
+                description: document.getElementById('transactionDescription').value || 'No description'
+            };
+            
+            appData.transactions.push(transaction);
+            saveToStorage();
+            renderAll();
+            this.reset();
+            document.getElementById('transactionDate').value = new Date().toISOString().split('T')[0];
+        });
+
+        document.getElementById('debtForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const debt = {
+                name: document.getElementById('debtName').value,
+                total: parseFloat(document.getElementById('debtTotal').value) || 0,
+                current: parseFloat(document.getElementById('debtCurrent').value) || 0,
+                rate: parseFloat(document.getElementById('debtRate').value) || 0,
+                minPayment: parseFloat(document.getElementById('debtMinPayment').value) || 0
+            };
+            
+            appData.debts.push(debt);
+            saveToStorage();
+            renderAll();
+            this.reset();
+        });
+
+        document.getElementById('goalForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const goal = {
+                name: document.getElementById('goalName').value,
+                target: parseFloat(document.getElementById('goalTarget').value) || 0,
+                current: parseFloat(document.getElementById('goalCurrent').value) || 0,
+                date: document.getElementById('goalDate').value
+            };
+            
+            appData.goals.push(goal);
+            saveToStorage();
+            renderAll();
+            this.reset();
+        });
+
+        document.getElementById('accountForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const account = {
+                bank: document.getElementById('accountBank').value,
+                type: document.getElementById('accountType').value,
+                name: document.getElementById('accountName').value,
+                balance: parseFloat(document.getElementById('accountBalance').value) || 0
+            };
+            
+            appData.accounts.push(account);
+            saveToStorage();
+            renderAll();
+            this.reset();
+        });
+
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('transactionDate').value = new Date().toISOString().split('T')[0];
+            loadFromStorage();
+            renderAll();
+        });
+    </script>
+</body>
+</html>
