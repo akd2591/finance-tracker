@@ -2,8 +2,26 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>MoneyQuest - Modern Finance</title>
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+
+    <!-- iOS Specific Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="MoneyQuest">
+
+    <!-- Theme Color -->
+    <meta name="theme-color" content="#667eea">
+
+    <!-- iOS Icons -->
+    <link rel="apple-touch-icon" href="icon-192.png">
+
+    <!-- Description for SEO and sharing -->
+    <meta name="description" content="Track your finances with gamification - manage transactions, debts, goals, and accounts">
+
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -622,19 +640,19 @@
         <div class="quick-actions">
             <h2 class="card-title">⚡ Quick Actions</h2>
             <div class="action-grid">
-                <button class="action-btn primary" onclick="showTab('transactions')">
+                <button class="action-btn primary" onclick="showTab('transactions', event)">
                     <span class="action-icon">💸</span>
                     <span class="action-text">Add Transaction</span>
                 </button>
-                <button class="action-btn" onclick="showTab('debts')">
+                <button class="action-btn" onclick="showTab('debts', event)">
                     <span class="action-icon">🔴</span>
                     <span class="action-text">Track Debt</span>
                 </button>
-                <button class="action-btn" onclick="showTab('goals')">
+                <button class="action-btn" onclick="showTab('goals', event)">
                     <span class="action-icon">🎯</span>
                     <span class="action-text">Set Goal</span>
                 </button>
-                <button class="action-btn" onclick="showTab('accounts')">
+                <button class="action-btn" onclick="showTab('accounts', event)">
                     <span class="action-icon">🏦</span>
                     <span class="action-text">Manage Accounts</span>
                 </button>
@@ -643,10 +661,10 @@
 
         <!-- Tabs -->
         <div class="tabs">
-            <button class="tab active" onclick="showTab('transactions')">💸 Transactions</button>
-            <button class="tab" onclick="showTab('debts')">🔴 Debts</button>
-            <button class="tab" onclick="showTab('goals')">🎯 Goals</button>
-            <button class="tab" onclick="showTab('accounts')">🏦 Accounts</button>
+            <button class="tab active" onclick="showTab('transactions', event)">💸 Transactions</button>
+            <button class="tab" onclick="showTab('debts', event)">🔴 Debts</button>
+            <button class="tab" onclick="showTab('goals', event)">🎯 Goals</button>
+            <button class="tab" onclick="showTab('accounts', event)">🏦 Accounts</button>
         </div>
 
         <!-- Tab Contents -->
@@ -822,13 +840,30 @@
             }
         };
 
-        // Storage functions
+        // Performance: Data version tracking for cache invalidation
+        let dataVersion = 0;
+
+        // Performance: Cache for expensive calculations
+        const cache = {
+            balance: null,
+            balanceVersion: -1,
+            trends: null,
+            trendsVersion: -1
+        };
+
+        // Storage functions with debouncing
+        let saveTimeout = null;
+
         function saveToStorage() {
-            try {
-                localStorage.setItem('modernMoneyQuestData', JSON.stringify(gameData));
-            } catch (e) {
-                console.log('Storage not available');
-            }
+            // Debounce: only save after 300ms of no changes
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                try {
+                    localStorage.setItem('modernMoneyQuestData', JSON.stringify(gameData));
+                } catch (e) {
+                    console.log('Storage not available');
+                }
+            }, 300);
         }
 
         function loadFromStorage() {
@@ -844,6 +879,20 @@
                             ...loadedData.userStats
                         }
                     };
+
+                    // Backward compatibility: Add IDs to old transactions that don't have them
+                    gameData.transactions = gameData.transactions.map((t, index) => {
+                        if (!t.id) {
+                            return {
+                                ...t,
+                                id: 'legacy_' + index + '_' + Date.now()
+                            };
+                        }
+                        return t;
+                    });
+
+                    // Ensure transactions are sorted (newest first)
+                    gameData.transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
                 }
             } catch (e) {
                 console.log('Could not load saved data');
@@ -916,71 +965,100 @@
         }
 
         // Tab switching
-        function showTab(tabName) {
+        function showTab(tabName, evt) {
             document.querySelectorAll('.tab-content').forEach(content => {
                 content.classList.remove('active');
             });
             document.querySelectorAll('.tab').forEach(tab => {
                 tab.classList.remove('active');
             });
-            
+
             document.getElementById(tabName).classList.add('active');
-            event.target.classList.add('active');
+            if (evt && evt.target) {
+                evt.target.classList.add('active');
+            }
         }
 
-        // Calculate live balance
+        // Calculate live balance with caching
         function calculateLiveBalance() {
+            // Return cached value if data hasn't changed
+            if (cache.balanceVersion === dataVersion && cache.balance !== null) {
+                return cache.balance;
+            }
+
             const startingBalance = gameData.accounts
                 .filter(acc => acc.type !== 'credit')
                 .reduce((sum, acc) => sum + Number(acc.balance || 0), 0);
-            
+
             const transactionTotal = gameData.transactions.reduce((sum, t) => {
                 return sum + (t.type === 'income' ? Number(t.amount) : -Number(t.amount));
             }, 0);
-            
-            return startingBalance + transactionTotal;
+
+            const balance = startingBalance + transactionTotal;
+
+            // Cache the result
+            cache.balance = balance;
+            cache.balanceVersion = dataVersion;
+
+            return balance;
         }
 
-        // Calculate spending trends
+        // Calculate spending trends with single-pass optimization and caching
         function calculateTrends() {
+            // Return cached value if data hasn't changed
+            if (cache.trendsVersion === dataVersion && cache.trends !== null) {
+                return cache.trends;
+            }
+
             const now = new Date();
             const currentMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
             const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
             const lastMonthStr = lastMonth.getFullYear() + '-' + String(lastMonth.getMonth() + 1).padStart(2, '0');
-            
-            // Current month expenses
-            const thisMonthExpenses = gameData.transactions
-                .filter(t => t.type === 'expense' && t.date && t.date.startsWith(currentMonth))
-                .reduce((sum, t) => sum + Number(t.amount || 0), 0);
-            
-            // Last month expenses
-            const lastMonthExpenses = gameData.transactions
-                .filter(t => t.type === 'expense' && t.date && t.date.startsWith(lastMonthStr))
-                .reduce((sum, t) => sum + Number(t.amount || 0), 0);
-            
-            // Calculate monthly average (last 6 months)
-            const monthlyAverages = [];
+
+            // Build month strings for last 6 months
+            const monthStrings = [];
             for (let i = 0; i < 6; i++) {
                 const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
                 const monthStr = monthDate.getFullYear() + '-' + String(monthDate.getMonth() + 1).padStart(2, '0');
-                const monthExpenses = gameData.transactions
-                    .filter(t => t.type === 'expense' && t.date && t.date.startsWith(monthStr))
-                    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
-                monthlyAverages.push(monthExpenses);
+                monthStrings.push(monthStr);
             }
-            
+
+            // Single pass through transactions - aggregate by month
+            const monthlyData = new Map();
+
+            gameData.transactions.forEach(t => {
+                if (t.type === 'expense' && t.date) {
+                    const monthKey = t.date.substring(0, 7); // YYYY-MM
+                    const amount = Number(t.amount || 0);
+                    monthlyData.set(monthKey, (monthlyData.get(monthKey) || 0) + amount);
+                }
+            });
+
+            // Extract data we need
+            const thisMonthExpenses = monthlyData.get(currentMonth) || 0;
+            const lastMonthExpenses = monthlyData.get(lastMonthStr) || 0;
+
+            // Get monthly averages for chart
+            const monthlyAverages = monthStrings.map(month => monthlyData.get(month) || 0);
+
             const avgMonthSpend = monthlyAverages.reduce((sum, amount) => sum + amount, 0) / monthlyAverages.length;
-            
+
             // Calculate percentage changes
-            const monthChange = lastMonthExpenses > 0 ? 
+            const monthChange = lastMonthExpenses > 0 ?
                 ((thisMonthExpenses - lastMonthExpenses) / lastMonthExpenses * 100) : 0;
-            
-            return {
+
+            const result = {
                 thisMonthExpenses,
                 avgMonthSpend,
                 monthChange,
                 monthlyAverages
             };
+
+            // Cache the result
+            cache.trends = result;
+            cache.trendsVersion = dataVersion;
+
+            return result;
         }
 
         // Update dashboard with trends
@@ -1022,15 +1100,25 @@
             updateSpendingChart(trends.monthlyAverages);
         }
 
+        // Track last chart data to avoid unnecessary rebuilds
+        let lastChartData = null;
+
         function updateSpendingChart(monthlyData) {
+            // Only rebuild if data actually changed
+            const dataString = JSON.stringify(monthlyData);
+            if (dataString === lastChartData) {
+                return; // No change, skip update
+            }
+            lastChartData = dataString;
+
             const chartContainer = document.getElementById('spendingChart');
             chartContainer.innerHTML = '';
-            
+
             // If no data, show a placeholder chart with demo data
             if (monthlyData.length === 0 || monthlyData.every(amount => amount === 0)) {
                 const demoData = [3000, 4500, 2800, 5200, 3800, 4200]; // Demo spending pattern
                 const maxAmount = Math.max(...demoData);
-                
+
                 demoData.forEach((amount, index) => {
                     const bar = document.createElement('div');
                     bar.className = 'chart-bar';
@@ -1040,7 +1128,7 @@
                     bar.title = `Month ${index + 1}: ฿${amount.toLocaleString()}`;
                     chartContainer.appendChild(bar);
                 });
-                
+
                 // Add overlay text
                 const overlay = document.createElement('div');
                 overlay.style.cssText = `
@@ -1058,11 +1146,12 @@
                 chartContainer.appendChild(overlay);
                 return;
             }
-            
+
             const maxAmount = Math.max(...monthlyData);
             if (maxAmount === 0) return;
-            
-            monthlyData.reverse().forEach((amount, index) => {
+
+            // Use slice to avoid mutating the original array
+            [...monthlyData].reverse().forEach((amount, index) => {
                 const bar = document.createElement('div');
                 bar.className = 'chart-bar';
                 const height = (amount / maxAmount) * 80;
@@ -1076,15 +1165,14 @@
         function renderTransactions() {
             const container = document.getElementById('transactionsList');
             container.innerHTML = '';
-            
+
             if (gameData.transactions.length === 0) {
                 container.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">🎯 Add your first transaction to start your streak!</p>';
                 return;
             }
-            
-            const sorted = [...gameData.transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
-            
-            sorted.slice(0, 10).forEach((transaction, index) => {
+
+            // Transactions are kept sorted, just slice the first 10
+            gameData.transactions.slice(0, 10).forEach((transaction) => {
                 const item = document.createElement('div');
                 item.className = 'list-item';
                 item.innerHTML = `
@@ -1096,7 +1184,7 @@
                         <div style="font-weight: bold; color: ${transaction.type === 'income' ? '#38a169' : '#e53e3e'}; font-size: 1.1em;">
                             ${transaction.type === 'income' ? '+' : '-'}฿${Number(transaction.amount || 0).toLocaleString()}
                         </div>
-                        <button class="delete-btn" onclick="deleteTransaction(${gameData.transactions.indexOf(transaction)})">Delete</button>
+                        <button class="delete-btn" onclick="deleteTransaction('${transaction.id}')">Delete</button>
                     </div>
                 `;
                 container.appendChild(item);
@@ -1199,75 +1287,103 @@
             });
         }
 
-        function renderAll() {
-            renderTransactions();
-            renderDebts();
-            renderGoals();
-            renderAccounts();
-            updateDashboard();
-            updateStreakAndStats();
+        // Selective re-rendering: only update what changed
+        function renderAll(changed = 'all') {
+            if (changed === 'all') {
+                renderTransactions();
+                renderDebts();
+                renderGoals();
+                renderAccounts();
+                updateDashboard();
+                updateStreakAndStats();
+            } else if (changed === 'transactions') {
+                renderTransactions();
+                updateDashboard(); // Balance and trends depend on transactions
+            } else if (changed === 'debts') {
+                renderDebts();
+                updateDashboard(); // Total debt displayed on dashboard
+            } else if (changed === 'goals') {
+                renderGoals();
+                updateDashboard(); // Total savings displayed on dashboard
+            } else if (changed === 'accounts') {
+                renderAccounts();
+                updateDashboard(); // Balance depends on accounts
+            } else if (changed === 'stats') {
+                updateStreakAndStats();
+            }
         }
 
-        // Delete functions
-        function deleteTransaction(index) {
-            gameData.transactions.splice(index, 1);
-            gameData.userStats.totalTransactions = Math.max(0, gameData.userStats.totalTransactions - 1);
-            saveToStorage();
-            renderAll();
+        // Delete functions using unique IDs
+        function deleteTransaction(id) {
+            const index = gameData.transactions.findIndex(t => t.id === id);
+            if (index !== -1) {
+                gameData.transactions.splice(index, 1);
+                gameData.userStats.totalTransactions = Math.max(0, gameData.userStats.totalTransactions - 1);
+                dataVersion++; // Invalidate cache
+                saveToStorage();
+                renderAll('transactions');
+            }
         }
 
         function deleteDebt(index) {
             gameData.debts.splice(index, 1);
+            dataVersion++; // Invalidate cache
             saveToStorage();
-            renderAll();
+            renderAll('debts');
         }
 
         function deleteGoal(index) {
             gameData.goals.splice(index, 1);
+            dataVersion++; // Invalidate cache
             saveToStorage();
-            renderAll();
+            renderAll('goals');
         }
 
         function deleteAccount(index) {
             gameData.accounts.splice(index, 1);
+            dataVersion++; // Invalidate cache
             saveToStorage();
-            renderAll();
+            renderAll('accounts');
         }
 
         // Form handlers
         document.getElementById('transactionForm').addEventListener('submit', function(e) {
             e.preventDefault();
-            
+
             const transaction = {
+                id: Date.now().toString() + Math.random().toString(36).substring(2, 9), // Unique ID
                 type: document.getElementById('transactionType').value,
                 amount: parseFloat(document.getElementById('transactionAmount').value) || 0,
                 category: document.getElementById('transactionCategory').value,
                 date: document.getElementById('transactionDate').value,
                 description: document.getElementById('transactionDescription').value || 'No description'
             };
-            
+
+            // Add transaction and maintain sorted order (newest first)
             gameData.transactions.push(transaction);
+            gameData.transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
             gameData.userStats.totalTransactions++;
-            
+
             updateStreak();
             addPoints(10);
-            
+
             if (gameData.userStats.totalTransactions === 1) {
                 showAchievement('first_transaction', 'Money Tracker!', 'Logged your first transaction! 🎉');
             }
             if (gameData.userStats.totalTransactions === 50) {
                 showAchievement('budget_master', 'Budget Master!', '50 transactions logged! You\'re a pro! 📊');
             }
-            
+
+            dataVersion++; // Invalidate cache
             saveToStorage();
-            renderAll();
+            renderAll('transactions');
             this.reset();
             document.getElementById('transactionDate').value = new Date().toISOString().split('T')[0];
         });
 
         document.getElementById('debtForm').addEventListener('submit', function(e) {
             e.preventDefault();
-            
+
             const debt = {
                 name: document.getElementById('debtName').value,
                 total: parseFloat(document.getElementById('debtTotal').value) || 0,
@@ -1275,56 +1391,59 @@
                 rate: parseFloat(document.getElementById('debtRate').value) || 0,
                 minPayment: parseFloat(document.getElementById('debtMinPayment').value) || 0
             };
-            
+
             gameData.debts.push(debt);
             addPoints(20);
-            
+
             if (gameData.debts.length === 1) {
                 showAchievement('debt_tracker', 'Debt Destroyer!', 'Started tracking debt! First step to freedom! 💪');
             }
-            
+
+            dataVersion++; // Invalidate cache
             saveToStorage();
-            renderAll();
+            renderAll('debts');
             this.reset();
         });
 
         document.getElementById('goalForm').addEventListener('submit', function(e) {
             e.preventDefault();
-            
+
             const goal = {
                 name: document.getElementById('goalName').value,
                 target: parseFloat(document.getElementById('goalTarget').value) || 0,
                 current: parseFloat(document.getElementById('goalCurrent').value) || 0,
                 date: document.getElementById('goalDate').value
             };
-            
+
             gameData.goals.push(goal);
             addPoints(15);
-            
+
             if (gameData.goals.length === 1) {
                 showAchievement('goal_setter', 'Dream Chaser!', 'Set your first goal! Dreams become reality! ✨');
             }
-            
+
+            dataVersion++; // Invalidate cache
             saveToStorage();
-            renderAll();
+            renderAll('goals');
             this.reset();
         });
 
         document.getElementById('accountForm').addEventListener('submit', function(e) {
             e.preventDefault();
-            
+
             const account = {
                 bank: document.getElementById('accountBank').value,
                 type: document.getElementById('accountType').value,
                 name: document.getElementById('accountName').value,
                 balance: parseFloat(document.getElementById('accountBalance').value) || 0
             };
-            
+
             gameData.accounts.push(account);
             addPoints(25);
-            
+
+            dataVersion++; // Invalidate cache
             saveToStorage();
-            renderAll();
+            renderAll('accounts');
             this.reset();
         });
 
@@ -1336,6 +1455,19 @@
             loadFromStorage();
             renderAll();
         });
+
+        // Register service worker for offline support (PWA)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then(registration => {
+                        console.log('Service Worker registered successfully:', registration.scope);
+                    })
+                    .catch(error => {
+                        console.log('Service Worker registration failed:', error);
+                    });
+            });
+        }
     </script>
 </body>
 </html>
