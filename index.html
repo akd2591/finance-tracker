@@ -22,6 +22,9 @@
     <!-- Description for SEO and sharing -->
     <meta name="description" content="Track your finances with gamification - manage transactions, debts, goals, and accounts">
 
+    <!-- jsQR Library for QR Code Scanning -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -561,7 +564,34 @@
             transition: width 0.5s ease;
             border-radius: 4px;
         }
-        
+
+        .qr-scanner-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            background: white;
+            padding: 30px;
+            border-radius: 25px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            text-align: center;
+            z-index: 1001;
+            transition: all 0.3s ease;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .qr-scanner-modal.show {
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        .qr-scanner-modal h3 {
+            color: #2d3748;
+            font-size: 1.5em;
+        }
+
         @media (max-width: 480px) {
             .container { padding: 10px; }
             .two-col { grid-template-columns: 1fr; }
@@ -569,6 +599,10 @@
             .trends-grid { grid-template-columns: 1fr; }
             .action-grid { grid-template-columns: 1fr; }
             .stats-overview { grid-template-columns: 1fr; }
+            .qr-scanner-modal {
+                width: 95%;
+                padding: 20px;
+            }
         }
     </style>
 </head>
@@ -670,6 +704,12 @@
         <!-- Tab Contents -->
         <div id="transactions" class="tab-content active">
             <h2 class="card-title">💸 Add Transaction</h2>
+
+            <!-- QR Scan Button -->
+            <button type="button" class="btn" onclick="openQRScanner()" style="background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%); margin-bottom: 20px;">
+                📷 Scan QR Code (Thai Bank Transfer)
+            </button>
+
             <form id="transactionForm">
                 <div class="two-col">
                     <div class="form-group">
@@ -821,6 +861,40 @@
         <h3 id="achievementTitle">Achievement Unlocked!</h3>
         <p id="achievementText">Great job!</p>
         <button class="btn" onclick="closeAchievement()" style="margin-top: 15px; width: auto; padding: 10px 20px;">Awesome!</button>
+    </div>
+
+    <!-- QR Scanner Modal -->
+    <div class="overlay" id="qrOverlay" onclick="closeQRScanner()"></div>
+    <div class="qr-scanner-modal" id="qrScannerModal">
+        <h3 style="margin-bottom: 15px;">📷 Scan QR Code</h3>
+        <p style="color: #666; margin-bottom: 20px; font-size: 0.9em;">
+            Position the QR code from your Thai bank transfer receipt within the frame
+        </p>
+
+        <!-- Camera input for mobile -->
+        <input type="file" id="qrImageInput" accept="image/*" capture="environment" style="display: none;" onchange="handleQRImage(event)">
+
+        <!-- Video preview for continuous scanning -->
+        <div id="qrVideoContainer" style="display: none; position: relative; width: 100%; max-width: 400px; margin: 0 auto;">
+            <video id="qrVideo" style="width: 100%; border-radius: 15px;"></video>
+            <canvas id="qrCanvas" style="display: none;"></canvas>
+            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 200px; border: 2px solid #667eea; border-radius: 10px; pointer-events: none;"></div>
+        </div>
+
+        <div id="qrStatus" style="margin: 15px 0; color: #666; font-size: 0.9em;">Ready to scan</div>
+
+        <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <button class="btn" onclick="triggerImageUpload()" style="flex: 1;">
+                📁 Upload QR Image
+            </button>
+            <button class="btn" onclick="startCamera()" style="flex: 1; background: #4ecdc4;">
+                📷 Use Camera
+            </button>
+        </div>
+
+        <button class="btn" onclick="closeQRScanner()" style="background: #e53e3e; margin-top: 10px;">
+            Close
+        </button>
     </div>
 
     <script>
@@ -1455,6 +1529,245 @@
             loadFromStorage();
             renderAll();
         });
+
+        // QR Scanner Variables
+        let qrStream = null;
+        let qrScanInterval = null;
+
+        // Open QR Scanner Modal
+        function openQRScanner() {
+            document.getElementById('qrOverlay').classList.add('show');
+            document.getElementById('qrScannerModal').classList.add('show');
+            document.getElementById('qrStatus').textContent = 'Ready to scan';
+        }
+
+        // Close QR Scanner Modal
+        function closeQRScanner() {
+            document.getElementById('qrOverlay').classList.remove('show');
+            document.getElementById('qrScannerModal').classList.remove('show');
+            stopCamera();
+        }
+
+        // Trigger image upload
+        function triggerImageUpload() {
+            document.getElementById('qrImageInput').click();
+        }
+
+        // Handle uploaded QR image
+        function handleQRImage(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            document.getElementById('qrStatus').textContent = 'Processing image...';
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.getElementById('qrCanvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.drawImage(img, 0, 0);
+
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+                    if (code) {
+                        processQRCode(code.data);
+                    } else {
+                        document.getElementById('qrStatus').textContent = '❌ No QR code found. Try again.';
+                        document.getElementById('qrStatus').style.color = '#e53e3e';
+                    }
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Start camera for continuous scanning
+        async function startCamera() {
+            const videoContainer = document.getElementById('qrVideoContainer');
+            const video = document.getElementById('qrVideo');
+            const canvas = document.getElementById('qrCanvas');
+
+            try {
+                qrStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' }
+                });
+
+                video.srcObject = qrStream;
+                video.setAttribute('playsinline', true);
+                video.play();
+
+                videoContainer.style.display = 'block';
+                document.getElementById('qrStatus').textContent = '📷 Camera active - point at QR code';
+                document.getElementById('qrStatus').style.color = '#4ecdc4';
+
+                // Start scanning loop
+                qrScanInterval = setInterval(() => {
+                    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+                        if (code) {
+                            processQRCode(code.data);
+                            stopCamera();
+                        }
+                    }
+                }, 300);
+
+            } catch (error) {
+                console.error('Camera error:', error);
+                document.getElementById('qrStatus').textContent = '❌ Camera access denied. Use image upload instead.';
+                document.getElementById('qrStatus').style.color = '#e53e3e';
+            }
+        }
+
+        // Stop camera
+        function stopCamera() {
+            if (qrStream) {
+                qrStream.getTracks().forEach(track => track.stop());
+                qrStream = null;
+            }
+            if (qrScanInterval) {
+                clearInterval(qrScanInterval);
+                qrScanInterval = null;
+            }
+            const videoContainer = document.getElementById('qrVideoContainer');
+            videoContainer.style.display = 'none';
+        }
+
+        // Parse Thai PromptPay QR Code (EMVCo format)
+        function parsePromptPayQR(qrData) {
+            const result = {
+                amount: null,
+                merchantName: null,
+                date: new Date().toISOString().split('T')[0]
+            };
+
+            try {
+                // PromptPay QR uses EMVCo TLV format
+                // Tag 54 = Transaction Amount
+                // Tag 59 = Merchant Name
+                // Tag 62 = Additional Data (may contain reference/date)
+
+                // Simple TLV parser
+                let i = 0;
+                while (i < qrData.length - 4) {
+                    const tag = qrData.substring(i, i + 2);
+                    const length = parseInt(qrData.substring(i + 2, i + 4), 10);
+
+                    if (isNaN(length) || i + 4 + length > qrData.length) break;
+
+                    const value = qrData.substring(i + 4, i + 4 + length);
+
+                    if (tag === '54') {
+                        // Transaction amount
+                        result.amount = parseFloat(value);
+                    } else if (tag === '59') {
+                        // Merchant name
+                        result.merchantName = value;
+                    } else if (tag === '62') {
+                        // Additional data - may contain sub-TLVs
+                        // Tag 05 often contains reference/bill number
+                        let j = 0;
+                        while (j < value.length - 4) {
+                            const subTag = value.substring(j, j + 2);
+                            const subLength = parseInt(value.substring(j + 2, j + 4), 10);
+                            if (isNaN(subLength) || j + 4 + subLength > value.length) break;
+                            const subValue = value.substring(j + 4, j + 4 + subLength);
+
+                            // Could extract reference/date info here if needed
+                            j += 4 + subLength;
+                        }
+                    }
+
+                    i += 4 + length;
+                }
+            } catch (error) {
+                console.error('QR parsing error:', error);
+            }
+
+            return result;
+        }
+
+        // Process scanned QR code
+        function processQRCode(qrData) {
+            console.log('QR Data:', qrData);
+
+            // Check if it's a PromptPay QR code (usually starts with "00020101")
+            if (qrData.startsWith('0002010') || qrData.includes('promptpay')) {
+                const parsed = parsePromptPayQR(qrData);
+
+                if (parsed.amount || parsed.merchantName) {
+                    // Fill the transaction form
+                    if (parsed.amount) {
+                        document.getElementById('transactionAmount').value = parsed.amount;
+                    }
+                    if (parsed.merchantName) {
+                        document.getElementById('transactionDescription').value = parsed.merchantName;
+                    }
+                    document.getElementById('transactionDate').value = parsed.date;
+                    document.getElementById('transactionType').value = 'expense'; // Default to expense
+
+                    // Try to guess category based on merchant name
+                    if (parsed.merchantName) {
+                        const name = parsed.merchantName.toLowerCase();
+                        if (name.includes('food') || name.includes('restaurant') || name.includes('cafe') || name.includes('coffee')) {
+                            document.getElementById('transactionCategory').value = 'food';
+                        } else if (name.includes('transport') || name.includes('grab') || name.includes('taxi')) {
+                            document.getElementById('transactionCategory').value = 'transport';
+                        } else if (name.includes('shop') || name.includes('store') || name.includes('mall')) {
+                            document.getElementById('transactionCategory').value = 'shopping';
+                        } else if (name.includes('hospital') || name.includes('clinic') || name.includes('pharmacy')) {
+                            document.getElementById('transactionCategory').value = 'healthcare';
+                        } else if (name.includes('cinema') || name.includes('movie') || name.includes('entertainment')) {
+                            document.getElementById('transactionCategory').value = 'entertainment';
+                        }
+                    }
+
+                    document.getElementById('qrStatus').textContent = '✅ QR code scanned! Form filled automatically.';
+                    document.getElementById('qrStatus').style.color = '#38a169';
+
+                    // Close scanner after 2 seconds
+                    setTimeout(() => {
+                        closeQRScanner();
+                    }, 2000);
+
+                } else {
+                    document.getElementById('qrStatus').textContent = '⚠️ QR code found but no transaction data extracted.';
+                    document.getElementById('qrStatus').style.color = '#f59e0b';
+                }
+            } else {
+                // Generic QR code or other format
+                // Try to extract any number that might be an amount
+                const amountMatch = qrData.match(/[\d,]+\.?\d*/);
+                if (amountMatch) {
+                    const amount = parseFloat(amountMatch[0].replace(/,/g, ''));
+                    if (amount > 0) {
+                        document.getElementById('transactionAmount').value = amount;
+                        document.getElementById('transactionDate').value = new Date().toISOString().split('T')[0];
+
+                        document.getElementById('qrStatus').textContent = '✅ Amount extracted from QR code!';
+                        document.getElementById('qrStatus').style.color = '#38a169';
+
+                        setTimeout(() => {
+                            closeQRScanner();
+                        }, 2000);
+                        return;
+                    }
+                }
+
+                document.getElementById('qrStatus').textContent = '⚠️ Not a Thai bank transfer QR code. Please use a PromptPay QR.';
+                document.getElementById('qrStatus').style.color = '#f59e0b';
+            }
+        }
 
         // Register service worker for offline support (PWA)
         if ('serviceWorker' in navigator) {
